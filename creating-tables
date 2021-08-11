@@ -1,0 +1,308 @@
+
+/*Customers: Refers to registered passengers that use the service.
+(fname, minitial, lname, DOB,  gender, passport number, address, city, country, phone number, 
+email, miles travelled, traveller_category, credit card number)
+*/
+CREATE TABLE customers(
+fname Varchar(15) not null,
+minitial Char(1),
+lname Varchar(15) not null,
+DOB date not null,
+gender Varchar(10) not null,
+passport_num Varchar(15) not null,
+address Varchar(20) not null,
+city Varchar(20) not null,
+country Varchar(15) not null,
+phone_num Real not null,
+email Varchar(15) not null,
+credit_card_num Varchar(20) not null REFERENCES payments(card_num),
+PRIMARY KEY (passport_num, email));
+ALTER TABLE customers ADD
+FOREIGN KEY(credit_card_num) REFERENCES payments(card_num);
+
+/*mileage: shows the traveller status, miles, 
+and applicable discounts of customers*/
+CREATE TABLE mileage(
+pass_num Varchar(15) not null REFERENCES customers(passport_num),
+email Varchar(15) not null,
+mileage Integer not null,
+trav_category Varchar(10) not null,
+PRIMARY KEY (pass_num,email));
+ALTER TABLE mileage ADD
+FOREIGN KEY(pass_num) REFERENCES customers(passport_num);
+
+/*Employees: All people working in the company.
+( fname, minitial, lname, DOB,  gender, phone number, email, 
+ssn, address, city, country, position, salary, routing number, acct number)
+*/
+CREATE TABLE employees(
+first Varchar(15) not null,
+middle Char(1),
+last Varchar(15) not null,
+gender Varchar(10) not null,
+phone_num Real not null,
+email Varchar(15) not null,
+ssn char(9) not null,
+acc_num Varchar(20) not null REFERENCES emp_bank_info(account_num),
+address Varchar(20) not null,
+city Varchar(20) not null,
+country Varchar(15) not null,
+position Varchar(10) not null,
+PRIMARY KEY (ssn));
+ALTER TABLE employees ADD
+FOREIGN KEY(acc_num) REFERENCES emp_bank_info(account_num);
+
+/*wages: show salary and payment date 
+of employees*/
+CREATE TABLE wages(
+essn Char(9) not null REFERENCES employees(ssn),
+salary Real not null,
+paymt_date date not null,
+emp_email Varchar(15) not null,
+PRIMARY KEY (essn, emp_email));
+ALTER TABLE wages ADD
+FOREIGN KEY(essn) REFERENCES employees(ssn);
+ALTER TABLE wages
+ADD CONSTRAINT check_wages
+CHECK (wages.salary > 0);
+
+/*emp_bank_info: acct and 
+routing number of emp*/
+CREATE TABLE emp_bank_info(
+account_num Varchar(20) not null,
+routing_num Varchar(20) not null,
+PRIMARY KEY (account_num, routing_num));
+
+/*Routes: Refers to available trips
+ (origin, airport origin, airport destination, destination, date, number, time, distance)
+*/
+CREATE TABLE routes(
+route_code Varchar(10) not null,
+origin Varchar(10) not null,
+destination Varchar(10) not null,
+day_of_week Varchar(7) not null,
+time_flight time not null,
+distance Real not null,
+PRIMARY KEY (route_code));
+ALTER TABLE routes
+ADD CONSTRAINT check_distance
+CHECK (routes.distance > 10);
+
+/*Flights:  Are generated from a scheduled route. 
+(flight number, airport origin, airport destination, seating_capacity, 
+gate number, time of arrival, time of departure, duration, airplane model)
+*/
+CREATE TABLE flights(
+flight_no Varchar(10) not null,
+route_no Varchar(10) not null REFERENCES routes(route_code),
+origin_airport Varchar(3) not null,
+destination_airport Varchar(3) not null,
+seating_capacity Real not null,
+gate_no Varchar(4) not null REFERENCES baggage_claim(gate_num),
+arrival_time time not null,
+departure_time time not null,
+duration time not null,
+airplane_model Varchar(10) not null REFERENCES airplanes(ap_model),
+PRIMARY KEY (flight_no));
+ALTER TABLE flights ADD
+FOREIGN KEY(route_no) REFERENCES routes(route_code);
+ALTER TABLE flights ADD
+FOREIGN KEY(gate_no) REFERENCES baggage_claim(gate_num);
+/*ALTER TABLE flights ADD
+FOREIGN KEY(airplane_model) REFERENCES airplanes(ap_model);*/
+
+/*baggage_claim: baggage info of customer*/
+CREATE TABLE baggage_claim(
+gate_num Varchar(4) not null,
+terminal Varchar(10) not null,
+bagg_claim_station Varchar(10) not null,
+PRIMARY KEY (gate_num, bagg_claim_station));
+
+/*Locations: Refer to the physical areas (where passengers depart or arrive) 
+or web locations where passengers can buy tickets 
+(web page, arrival airport, departure airport, application)
+*/
+CREATE TABLE locations(
+loc_id Varchar(10) not null,
+route_co Varchar(10) not null REFERENCES routes(route_code),
+webpage Varchar(30),
+PRIMARY KEY (loc_id));
+ALTER TABLE locations ADD
+FOREIGN KEY(route_co) REFERENCES routes(route_code);
+
+/*Tickets: Customers buy them for specific travels. A non-registered customer can also buy them.
+(flight number, date, confirmation number, airport departure, airport arrival,
+arrival time,departure time, boarding gate, boarding group, fname, minitial,
+lname, seat number, class)
+*/
+CREATE TABLE tickets(
+flight_num Varchar(10) not null REFERENCES flights(flight_no),
+flight_date date not null,
+confirm_no Varchar(10) not null,
+a_time time not null,
+d_time time not null,
+board_gate Varchar(4) not null,
+board_gp Integer not null,
+locat_id Varchar(10) not null REFERENCES locations(loc_id),
+seat_no Varchar(4),
+class Varchar(10) not null,
+PRIMARY KEY (confirm_no));
+ALTER TABLE tickets ADD
+FOREIGN KEY(flight_num) REFERENCES flights(flight_no);
+ALTER TABLE tickets ADD
+FOREIGN KEY(locat_id) REFERENCES locations(loc_id);
+
+/*Airplanes: Are assigned to specific travels 
+(model_name,plane capacity, # of planes with model, 
+weight capacity, year it started operating, year of use, # of cabins, )
+*/
+CREATE TABLE airplanes(
+ap_id Integer not null REFERENCES airplane_features(airplane_number),
+ap_model Varchar(10) not null,
+ap_capacity Integer not null,
+ap_weight_cap Real not null,
+operate_year year not null,
+cabin_capacity Integer not null,
+PRIMARY KEY (ap_id, ap_model));
+ALTER TABLE airplanes ADD
+FOREIGN KEY(ap_id) REFERENCES airplane_features(airplane_number);
+ALTER TABLE airplanes
+ADD CONSTRAINT weight_check
+CHECK (airplanes.ap_weight_cap < 175000); /*weight is in pounds*/
+
+/*Cabins: Refers to the class (VIP or economic). 
+Price depends on the combination of route and cabin.
+(airplane model, airplane number, class, price)
+*/
+CREATE TABLE cabins(
+class_status Varchar(10) not null,
+air_model Varchar(10) not null REFERENCES airplanes(ap_model),
+air_id Integer not null REFERENCES airplanes(ap_id),
+air_price Real not null,
+PRIMARY KEY (air_id, air_model));
+ALTER TABLE cabins ADD
+FOREIGN KEY(air_id) REFERENCES airplanes(ap_id);
+
+/*Payments:  A ticket can generate one or more than one payment. 
+(card number, date of expiration, cvv code, type card, coupon)
+*/
+CREATE TABLE payments(
+card_num Varchar(16) not null,
+conf_num Varchar(10) not null REFERENCES tickets(confirmation_num),
+expiration_date date not null,
+ccv_code Char(3) not null,
+card_type Varchar(7) not null,
+coupon Boolean,
+PRIMARY KEY (card_num));
+ALTER TABLE payments ADD
+FOREIGN KEY(conf_num) REFERENCES tickets(confirm_no);
+
+/*Discounts: Applied to tickets and include a percentage of
+ discount over the original price 
+ (confirmation number, card number, percentage, original price, final price, coupon)
+*/
+CREATE TABLE discounts(
+confirm_num Varchar(10) not null REFERENCES tickets(confirm_no),
+cust_email Varchar(15) not null REFERENCES customers(email),
+percentage Real,
+og_price Real not null,
+final_price Real not null,
+coupon_status boolean,
+PRIMARY KEY (confirm_num, cust_email));
+ALTER TABLE discounts ADD
+FOREIGN KEY(confirm_num) REFERENCES tickets(confirm_no);
+
+/*food_vendors: food providers in airplanes*/
+CREATE TABLE food_vendors(
+a_code Integer not null REFERENCES airplanes(ap_id),
+food_type Varchar(15) not null,
+quantity Integer,
+price Real,
+comp_name Varchar(15) not null,
+PRIMARY KEY (a_code, comp_name));
+ALTER TABLE food_vendors ADD
+FOREIGN KEY(a_code) REFERENCES airplanes(ap_id);
+ALTER TABLE food_vendors
+ADD CONSTRAINT price_check
+CHECK (food_vendors.quantity > 30); /*the airline will not buy less than 30 things for each food type, they buy in bulk*/
+
+/*Employee schedule: 
+(FirstName, Mname, LastName, ssn, flight_number,Positions, day, time)
+*/
+CREATE TABLE emp_schedule(
+essn Char(9) not null REFERENCES employees(ssn),
+flight_number Varchar(10) not null REFERENCES flights(flight_no),
+position_status Varchar(10) not null,
+day_of_week date not null,
+time_status time not null,
+PRIMARY KEY (essn, flight_number));
+ALTER TABLE emp_schedule ADD
+FOREIGN KEY(essn) REFERENCES employees(ssn);
+ALTER TABLE emp_schedule ADD
+FOREIGN KEY(flight_number) REFERENCES flights(flight_no);
+
+/*Employee’s dependent:
+(Essn, dependent_name, gender, DOB, relationship)
+*/
+CREATE TABLE emp_dependents(
+essn Char(9) not null REFERENCES employees(ssn),
+d_name Varchar(20) not null,
+d_gender Varchar(10) not null,
+d_DOB date not null,
+d_relationship Varchar(10) not null,
+PRIMARY KEY (essn, d_DOB));
+ALTER TABLE emp_dependents ADD
+FOREIGN KEY(essn) REFERENCES employees(ssn);
+
+/*airplane_features: cool stuff the planes have*/
+CREATE TABLE airplane_features(
+airplane_number Integer not null,
+food_code Varchar(10) not null,
+tv boolean not null,
+wifi boolean not null,
+power_outlets boolean not null,
+seat_type Varchar(10) not null,
+extra_space boolean not null,
+PRIMARY KEY (airplane_number, food_code));
+ALTER TABLE airplane_features
+ADD CONSTRAINT quality_of_service
+CHECK((airplane_features.tv = TRUE AND airplane_features.wifi = TRUE) OR (airplane_features.wifi = TRUE AND airplane_features.power_outlets = TRUE));
+/* we are a cheap airline, we do not offer tv wifi and power outlets all in the same plane lol*/
+
+/*Luggage: 
+(passport_num, weight, number_baggage, color, type)
+*/
+CREATE TABLE luggage(
+passport_no Varchar(15) not null REFERENCES customers(passport_num),
+gate_no Varchar(4) not null REFERENCES baggage_claim(gate_num),
+l_weight Real not null,
+l_no Varchar(15) not null,
+l_color Varchar(10) not null,
+l_type Varchar(10) not null,
+PRIMARY KEY (l_no));
+ALTER TABLE luggage ADD
+FOREIGN KEY(passport_no) REFERENCES customers(passport_num);
+ALTER TABLE luggage ADD
+FOREIGN KEY(gate_no) REFERENCES baggage_claim(gate_num);
+ALTER TABLE luggage
+ADD CONSTRAINT lug_w
+CHECK (luggage.l_weight < 50);
+
+/*Traveler’s dependents:
+(passport, dependent_name, gender, DOB, relationship, type_of_dependent)
+*/
+CREATE TABLE trav_dependents(
+cust_passport_num Varchar(15) not null REFERENCES customers(passport_num),
+dep_passport_num Varchar(15) not null,
+dependent_name Varchar(15) not null,
+dep_gender Varchar(10) not null,
+dep_DOB date not null,
+dep_relationship Varchar(10) not null,
+dep_type Varchar(10) not null,
+PRIMARY KEY (cust_passport_num, dep_passport_num));
+ALTER TABLE trav_dependents ADD
+FOREIGN KEY(cust_passport_num) REFERENCES customers(passport_num);
+
+
+/*cabins, discounts, flights*/
+
