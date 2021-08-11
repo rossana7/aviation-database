@@ -1,0 +1,251 @@
+select *
+from INFORMATION_SCHEMA.COLUMNS;
+select * from customers;
+
+/* Query #1:  In how many flights, planes departed with more
+than half of their full capacity, in terms of sold tickets, in 2016?*/
+--we need 3 relations: tickets, flights, and planes
+SELECT f.flight_id, COUNT(*) AS quantity, p.capacity
+FROM tickets AS t join
+        flights AS f on f.flight_id = t.flight_id JOIN
+            planes AS p ON p.plane_id = f.plane_id
+WHERE year(f.[date]) = 2016
+GROUP BY f.flight_id, p.capacity
+HAVING COUNT(*) > (p.capacity / 2)
+ORDER BY quantity DESC;
+
+/* Query #2: In how many flights, planes departed with less
+than 25% of their full capacity, in terms of sold tickets, in 2017? */
+-- flights, routes, tickets
+SELECT COUNT(*) AS unpopular_flights FROM(
+SELECT f.flight_id, COUNT(*) AS flight_attendees, p.capacity
+FROM flights AS f JOIN tickets AS t ON f.flight_id = t.flight_id
+JOIN planes AS p ON p.plane_id = f.plane_id
+WHERE year(f.[date]) = 2017
+GROUP BY f.flight_id, p.capacity
+HAVING COUNT(*) < p.capacity / 4)a
+
+/* Query #3: Which route of flights generated the most and 
+the least revenue (SUM of final_price) in 2017 */
+-- routes, flights, tickets
+
+-- gives route with max revenue
+SELECT TOP(1) r.route_id, SUM(final_price) AS revenue 
+FROM routes AS r JOIN
+        flights AS f ON f.route_id = r.route_id JOIN
+            tickets AS t ON t.flight_id = f.flight_id
+WHERE year(t.[purchase_date]) = 2017
+GROUP BY r.route_id
+ORDER BY SUM(final_price) DESC
+
+-- returns route with min revenue
+SELECT TOP(1) r.route_id, SUM(final_price) AS revenue
+FROM routes AS r JOIN
+        flights AS f ON f.route_id = r.route_id JOIN
+            tickets AS t ON t.flight_id = f.flight_id
+WHERE year(t.[purchase_date]) = 2017
+GROUP BY r.route_id
+ORDER BY SUM(final_price) ASC;
+
+/* Query #4: The database does not contain any discounts since these were 
+created after in 2021, but the managers want to know how much 
+less money they would have made if they would have applied the 
+discounts rates starting  2016, having into account that:
+
+4.1: The Elderly Discount applies to all the customers who, 
+at the moment they purchase the ticket, are at least 65 years old */
+--we need discounts, customers, tickets
+SELECT COUNT(*) AS elderly_disc_count, sum(total_discount) AS total_disc
+FROM (
+    SELECT (final_price * (SELECT discounts.[percentage] FROM discounts WHERE discounts.name = 'Elderly Discount')) AS total_discount
+    FROM tickets AS t
+    WHERE customer_id in (SELECT customer_id FROM customers WHERE DATEDIFF(year,birth_date,t.purchase_date) >= 65)
+    ) a
+
+/*4.2: The Student Discount applies to all the customers who, at the
+moment they purchase the ticket, are between 16 and 23 years old */
+SELECT COUNT(*) AS student_disc_count, sum(total_discount) AS total_disc
+FROM (
+    SELECT (final_price * (SELECT discounts.[percentage] FROM discounts WHERE discounts.name = 'Student Discount')) AS total_discount
+    FROM tickets AS t
+    WHERE customer_id in (SELECT customer_id FROM customers WHERE DATEDIFF(year,birth_date,t.purchase_date) >= 16 AND DATEDIFF(year,birth_date,t.purchase_date) <= 23)
+    ) a
+
+/* Query #5: Estimate the monthly average ratio of sold tickets of registered passengers 
+over not registered passengers in years 2016 and 2017. */
+SELECT sum(OT.fin) / 24.0 As Ratio
+FROM (
+    SELECT (cast(Q1.cnt1 as decimal)) / (Q2.cnt2) As fin-- gives the 24 ratios
+    FROM (
+        SELECT count(T1.purchase_date) As cnt1-- Registered users
+        FROM tickets T1
+        WHERE year(T1.purchase_date) = 2016 OR year(T1.purchase_date) = 2017 AND T1.customer_id IS NOT NULL
+        GROUP BY year(T1.purchase_date), month(T1.purchase_date) -- 24 groups year and month
+ ) As Q1,
+ (
+SELECT count(T.purchase_date) As cnt2 -- Non registered users
+FROM tickets T
+WHERE year(T.purchase_date) = 2016 OR year(T.purchase_date) = 2017 AND T.customer_id IS NULL
+GROUP BY year(T.purchase_date), month(T.purchase_date) -- 24 groups year and month
+ ) As Q2
+) As OT;
+
+/* Query #6: For routes going from Tampa to Orlando, for each weekday,
+what is the most demanded route in terms of number of sold tickets? */
+-- cities_states, weekdays, tickets, routes, flights
+SELECT routes, the_day, popular
+FROM(
+(SELECT r.route_id AS routes, w.name AS the_day, COUNT(*) AS popular
+FROM cities_states AS cs JOIN routes AS r ON cs.city_state_id = r.city_state_id_origin
+JOIN weekdays AS w ON r.weekday_id = w.weekday_id
+JOIN flights AS f ON r.route_id = f.route_id
+JOIN tickets AS t ON f.flight_id = t.flight_id
+WHERE cs.name = 'Tampa' AND (w.name != 'Saturday' AND w.name != 'Sunday')
+GROUP BY r.route_id, w.name)
+INTERSECT
+(SELECT r.route_id AS routes, w.name AS the_day, COUNT(*) AS popular
+FROM cities_states AS cs JOIN routes AS r ON cs.city_state_id = r.city_state_id_destination
+JOIN weekdays AS w ON r.weekday_id = w.weekday_id
+JOIN flights AS f ON r.route_id = f.route_id
+JOIN tickets AS t ON f.flight_id = t.flight_id
+WHERE cs.name = 'Orlando' AND (w.name != 'Saturday' AND w.name != 'Sunday')
+GROUP BY r.route_id, w.name))a
+ORDER BY the_day, popular DESC;
+
+/* ASK = Query #7: For routes going from Orlando to Tampa, for each weekday, 
+what is the most demanded hour in terms of number of sold tickets? */
+-- cities_states, routes, weekdays, tickets, flights
+(SELECT DISTINCT wd.name as weekday, r.route_id AS id, DATEPART(HOUR,t.[purchase_time]) AS demanded_hour, COUNT(*) AS tickets_sold
+FROM cities_states AS cs JOIN
+routes AS r ON r.city_state_id_origin = cs.city_state_id JOIN
+weekdays AS wd ON wd.weekday_id = r.weekday_id JOIN
+flights AS f ON f.route_id = r.route_id JOIN
+tickets AS t ON t.flight_id = f.flight_id
+WHERE cs.name = 'Orlando' AND (wd.name != 'Saturday' AND wd.name != 'Sunday')
+GROUP BY r.route_id, wd.name, t.purchase_time)
+INTERSECT
+(SELECT DISTINCT wd.name as weekday, r.route_id AS id, DATEPART(HOUR,t.[purchase_time]) AS demanded_hour, COUNT(*) AS tickets_sold
+FROM cities_states AS cs JOIN
+routes AS r ON r.city_state_id_destination = cs.city_state_id JOIN
+weekdays AS wd ON wd.weekday_id = r.weekday_id JOIN
+flights AS f ON f.route_id = r.route_id JOIN
+tickets AS t ON t.flight_id = f.flight_id
+WHERE cs.name = 'Tampa' AND (wd.name != 'Saturday' AND wd.name != 'Sunday')
+GROUP BY r.route_id, wd.name, t.purchase_time)
+ORDER BY weekday, tickets_sold DESC;
+
+/* Query #8: Knowing that at least 25% of the capacity of the full passenger capacity
+of the planes, with regard to the number of sold tickets, is necessary to justify the departure
+of a flight. The managers would like to know which flights should not have departed in the year 2017?*/
+SELECT ti.flight_id, pl.capacity AS plane_capacity, COUNT(*) AS actual_turnout
+FROM tickets As ti JOIN flights as fl ON ti.flight_id = fl.flight_id
+    JOIN planes AS pl ON fl.plane_id = pl.plane_id
+WHERE year(ti.boarding_date) = 2017
+GROUP BY ti.flight_id, pl.capacity
+HAVING COUNT(*) < pl.capacity/4;
+
+/* Query #9: What are the lowest and highest months in terms of
+sold tickets in 2017?*/
+-- selects max month
+SELECT top 1 DATENAME(MONTH,purchase_date) "Month", count(purchase_date) Sold_tickets /*, MIN(purchase_date) AS Lowest_Month, MAX(pu) AS Highest_Month*/
+FROM tickets
+WHERE YEAR(purchase_date) = 2017
+GROUP BY DATENAME(MONTH,purchase_date) 
+ORDER BY count(purchase_date) DESC
+
+--selects min month
+SELECT top 1 DATENAME(MONTH,purchase_date) "Month", count(purchase_date) Sold_tickets /*, MIN(purchase_date) AS Lowest_Month, MAX(pu) AS Highest_Month*/
+FROM tickets
+WHERE YEAR(purchase_date) = 2017
+GROUP BY DATENAME(MONTH,purchase_date) 
+ORDER BY count(purchase_date) ASC
+
+/* Query #10: What are the three employees that have
+sold the most tickets in 2017? */
+--employees, tickets
+SELECT TOP (3) e.first_name, e.last_name, COUNT(*) AS sales
+FROM tickets AS t JOIN employees AS e ON t.employee_id = e.employee_id
+WHERE year(t.purchase_date) = 2017
+GROUP BY e.first_name, e.last_name
+ORDER BY sales DESC;
+
+/* Query #11: What is the most demanded cabin type 
+in terms of sold tickets in 2017?  */
+-- routes_cabin_type, cabin_types, tickets
+SELECT TOP(1) ct.name, COUNT(*) AS tickets_sold
+FROM cabin_types AS ct JOIN
+        tickets as t ON ct.cabin_type_id = t.cabin_type_id
+WHERE year(t.[purchase_date]) = 2017
+GROUP BY ct.name
+ORDER BY COUNT(*) DESC;
+
+/* Query 12: What is the purchase location in which most tickets were sold in 2016? */
+SELECT TOP(1) l.name AS location_name, ti.purchase_location_id, COUNT(*) AS purchases
+FROM tickets as ti JOIN locations AS l ON ti.purchase_location_id = l.location_id
+WHERE year(ti.purchase_date) = 2016
+GROUP BY ti.purchase_location_id, l.name
+ORDER BY COUNT(*) DESC;
+
+/* Query #13: From all the flights registered in the database, which ones
+departed with full capacity in terms of sold tickets?*/
+SELECT fl.flight_id
+FROM tickets ti Join flights fl ON fl.flight_id = ti.flight_id JOIN
+planes pl ON fl.plane_id = pl.plane_id
+GROUP BY fl.flight_id, pl.capacity
+HAVING COUNT(*) = pl.capacity;
+
+/* Query #14: What is the most used payment type in
+terms of sold tickets in 2017? */
+-- payment_types, tickets
+SELECT TOP (1) pt.name, COUNT(*) AS times_used
+FROM payment_types AS pt JOIN tickets AS t ON pt.payment_type_id = t.payment_type_id
+WHERE year(t.purchase_date) = 2017
+GROUP BY pt.name;
+
+/* Query #15: What is the date where the most revenue (sum of final_price) 
+was collected in terms of sold tickets in 2017  */
+-- tickets
+SELECT TOP(1) CAST(t.purchase_date As Date) As Date , SUM(final_price) AS revenue
+FROM tickets as t
+WHERE year(t.[purchase_date]) = 2017
+GROUP BY t.purchase_date
+ORDER BY revenue DESC;
+
+/* Query #16: What is the hour of the day where the most tickets were sold in 2017? */
+SELECT TOP(1) DATEPART(hour, ti.purchase_time) AS the_hour, COUNT(*) as purchases
+FROM tickets as ti
+WHERE year(ti.purchase_date) = 2017
+GROUP BY DATEPART(hour, ti.purchase_time)
+ORDER BY COUNT(*) DESC;
+
+/* Query #17: What are the three cities where the most customers live in?*/
+SELECT  TOP(3) cs.name, COUNT(cu.city_state_id) #_people
+FROM    cities_states AS cs JOIN customers AS cu ON cs.city_state_id = cu.city_state_id
+GROUP BY cs.name
+ORDER BY COUNT(cu.city_state_id) DESC;
+
+/* Query #18: What are the six zip codes where the most employees live in? */
+SELECT TOP (6) z.name, COUNT(*) AS most_common
+FROM zipcodes as z JOIN employees AS e ON e.zipcode_id = z.zipcode_id
+GROUP BY z.name
+ORDER BY COUNT(*) DESC;
+
+/* Query #19: What are the three customers that bought the most tickets in 2017 */
+-- customers, tickets
+SELECT TOP(3) c.first_name, c.last_name, c.customer_id, COUNT(*) AS 'number_of_tickets'
+FROM customers AS c JOIN
+        tickets AS t ON t.customer_id = c.customer_id
+WHERE year(t.[purchase_date]) = 2017
+GROUP BY c.first_name, c.last_name, c.customer_id
+ORDER BY COUNT(*) DESC;
+
+/* Query #20: What is the most used route on weekends (Saturday, Sunday)  
+in terms of sold tickets in 2017? */
+SELECT r.route_id, DATENAME(weekday, t.boarding_date) AS Day, COUNT(*) AS popular
+FROM routes As r JOIN flights AS f ON r.route_id = f.route_id
+    JOIN tickets AS t ON t.flight_id = f.flight_id
+WHERE DATENAME(weekday, t.boarding_date) = 'Saturday' OR DATENAME(weekday, t.boarding_date) = 'Sunday'
+    AND year(t.purchase_date) = 2017
+GROUP BY r.route_id, DATENAME(weekday, t.boarding_date)
+ORDER BY COUNT(*) DESC;
+
